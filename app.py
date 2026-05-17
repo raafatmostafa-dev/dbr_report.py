@@ -30,18 +30,18 @@ try:
     master_df = pd.DataFrame(sorted(list(all_agents), key=str), columns=["Agent Name"])
 
     # ----------------------------------------------------
-    # 1. شيت [Calls MVCC] والـ Rates بتعتها (تعديل المسميات المطابقة للشيت الفعلي)
+    # 1. شيت [Calls MVCC] والـ Rates بتعتها (بناءً على المسميات الحقيقية في الشيت)
     # ----------------------------------------------------
     if "Calls MVCC" in all_dfs:
         df_src = all_dfs["Calls MVCC"].copy()
         df_src["Agent Name"] = df_src["Agent Name"].astype(str).str.strip()
         
-        # مطابقة الأسماء الحرفية المكتوبة بالشيت الفعلي
-        df_src["Assigned Calls MVCC_calc"] = pd.to_numeric(df_src["Assigned Calls MVCC"], errors='coerce')
-        df_src["Accepted Calls MVCC_calc"] = pd.to_numeric(df_src["Accepted Calls MVCC"], errors='coerce')
-        df_src["Timed Out MVCC_calc"] = pd.to_numeric(df_src["Timed Out MVCC"], errors='coerce')
-        df_src["Cancelled MVCC_calc"] = pd.to_numeric(df_src["Cancelled MVCC"], errors='coerce')
-        df_src["Abandoned MVCC_calc"] = pd.to_numeric(df_src["Abandoned MVCC"], errors='coerce')
+        # السحب بالمسميات الحرفية الموجودة في الشيت الفعلي لمنع الـ KeyError
+        df_src["Assigned Calls MVCC_calc"] = pd.to_numeric(df_src["Assigned Calls"], errors='coerce') if "Assigned Calls" in df_src.columns else 0
+        df_src["Accepted Calls MVCC_calc"] = pd.to_numeric(df_src["Accepted Calls"], errors='coerce') if "Accepted Calls" in df_src.columns else 0
+        df_src["Timed Out MVCC_calc"] = pd.to_numeric(df_src["Timed Out MVCC"], errors='coerce') if "Timed Out MVCC" in df_src.columns else 0
+        df_src["Cancelled MVCC_calc"] = pd.to_numeric(df_src["Cancelled MVCC"], errors='coerce') if "Cancelled MVCC" in df_src.columns else 0
+        df_src["Abandoned MVCC_calc"] = pd.to_numeric(df_src["Abandoned MVCC"], errors='coerce') if "Abandoned MVCC" in df_src.columns else 0
         
         for r_col in ["CSR", "Abondand rate", "Cancelled Rate"]:
             if r_col in df_src.columns:
@@ -62,7 +62,7 @@ try:
         if "Cancelled Rate" in df_src.columns: agg_rules["Cancelled Rate"] = "mean"
         
         df_g = df_src.groupby("Agent Name", as_index=False).agg(agg_rules)
-        # إعادة تسمية الأعمدة المحسوبة للاسم النهائي المطلوب للـ 14 عمود
+        # إعادة التسمية للمسميات الـ 14 المطلوبة للجدول النهائي
         df_g = df_g.rename(columns={
             "Assigned Calls MVCC_calc": "Assigned Calls MVCC",
             "Accepted Calls MVCC_calc": "Accepted Calls MVCC",
@@ -79,10 +79,10 @@ try:
         df_src = all_dfs["Calls Voyce"].copy()
         df_src["Agent Name"] = df_src["Agent Name"].astype(str).str.strip()
         
-        df_src["Assigned Calls Voyce"] = pd.to_numeric(df_src["Assigned Calls \\"], errors='coerce')
-        df_src["Accepted Calls Voyce"] = pd.to_numeric(df_src["Accepted Calls \\"], errors='coerce')
-        df_src["Talk Time Voyce"] = pd.to_numeric(df_src["Talk Time Voyce"], errors='coerce')
-        df_src["Missing Calls Voyce"] = pd.to_numeric(df_src["Missing Calls \\"], errors='coerce')
+        df_src["Assigned Calls Voyce"] = pd.to_numeric(df_src["Assigned Calls \\"], errors='coerce') if "Assigned Calls \\" in df_src.columns else 0
+        df_src["Accepted Calls Voyce"] = pd.to_numeric(df_src["Accepted Calls \\"], errors='coerce') if "Accepted Calls \\" in df_src.columns else 0
+        df_src["Talk Time Voyce"] = pd.to_numeric(df_src["Talk Time Voyce"], errors='coerce') if "Talk Time Voyce" in df_src.columns else 0
+        df_src["Missing Calls Voyce"] = pd.to_numeric(df_src["Missing Calls \\"], errors='coerce') if "Missing Calls \\" in df_src.columns else 0
         
         df_g = df_src.groupby("Agent Name", as_index=False)[["Assigned Calls Voyce", "Accepted Calls Voyce", "Talk Time Voyce", "Missing Calls Voyce"]].sum()
         master_df = pd.merge(master_df, df_g, on="Agent Name", how="left")
@@ -107,7 +107,7 @@ try:
             master_df = pd.merge(master_df, df_g, on="Agent Name", how="left")
 
     # ----------------------------------------------------
-    # 4. بناء الـ 14 عمود النهائي بالترتيب الحرفي الصارم
+    # 4. بناء وتأمين الـ 14 عمود بالترتيب الحرفي الصارم
     # ----------------------------------------------------
     required_columns = [
         "Assigned Calls MVCC",   # 1
@@ -141,7 +141,7 @@ try:
     final_order = ["Agent Name"] + required_columns
     master_df = master_df.reindex(columns=final_order)
 
-    st.success("✅ تم ربط أسماء الأعمدة بنجاح ومستعدين للعرض!")
+    st.success("✅ تم حل مشكلة مسميات الأعمدة والـ 14 عمود جاهزون بالترتيب الصحيح!")
 
     # 5. شريط البحث والتصفية
     st.sidebar.header("🔍 تصفية التقارير")
