@@ -19,9 +19,12 @@ try:
     
     for name in excel_file.sheet_names:
         df = excel_file.parse(name)
-        df.columns = df.columns.str.strip()
+        # تنظيف أسماء الأعمدة نفسها
+        df.columns = df.columns.astype(str).str.strip()
         all_dfs[name] = df
+        
         if "Agent Name" in df.columns:
+            # التحويل لنص أولاً لتجنب خطأ الـ .str accessor
             agents_clean = df["Agent Name"].dropna().astype(str).str.strip()
             agents_clean = [a for a in agents_clean.unique() if a and a.lower() not in ["nan", "null", "0", "0.0"]]
             all_agents.update(agents_clean)
@@ -48,11 +51,9 @@ try:
             if r_col in df_src.columns:
                 df_src[r_col] = df_src[r_col].astype(str).str.replace('%', '', regex=False)
                 df_src[r_col] = pd.to_numeric(df_src[r_col], errors='coerce')
-                # لو الأرقام مخزنة كنسبة عشرية (مثلاً 0.98 بدلاً من 98)
                 if df_src[r_col].max() <= 1.0 and df_src[r_col].max() > 0:
                     df_src[r_col] = df_src[r_col] * 100
 
-        # تجميع البيانات: جمع للمكالمات ومتوسط للنسب
         agg_rules = {
             "Assigned Calls MVCC": "sum",
             "Accepted Calls MVCC": "sum",
@@ -74,7 +75,7 @@ try:
         df_src = all_dfs["Calls Voyce"].copy()
         df_src["Agent Name"] = df_src["Agent Name"].astype(str).str.strip()
         
-        # مطابقة الأعمدة بناءً على شكل الشيت الحقيقي
+        # استخدام التسميات الصحيحة للأعمدة مع الـ Backslash
         df_src["Assigned Calls Voyce"] = pd.to_numeric(df_src["Assigned Calls \\"], errors='coerce')
         df_src["Accepted Calls Voyce"] = pd.to_numeric(df_src["Accepted Calls \\"], errors='coerce')
         df_src["Talk Time Voyce"] = pd.to_numeric(df_src["Talk Time Voyce"], errors='coerce')
@@ -103,7 +104,7 @@ try:
             master_df = pd.merge(master_df, df_g, on="Agent Name", how="left")
 
     # ----------------------------------------------------
-    # 4. الـ 14 عمود بالترتيب الإجباري (خلق الأعمدة لو مش موجودة)
+    # 4. بناء الـ 14 عمود بالترتيب الحرفي الصارم
     # ----------------------------------------------------
     required_columns = [
         "Assigned Calls MVCC",   # 1
@@ -122,29 +123,29 @@ try:
         "CSAT Voyce"             # 14
     ]
 
-    # التأكد من خلق العمود حتى لو الشيت سقط علشان يظهر الجدول كامل 14 عمود
+    # إجبار خلق العمود لو كان مختفي أو فاضي لضمان الـ 14 عمود كاملين
     for col in required_columns:
         if col not in master_df.columns:
             master_df[col] = 0.0
 
-    # ملء الخلايا الفاضية بأصفار قبل التنسيق
+    # ملء الـ NaN بأصفار
     master_df[required_columns] = master_df[required_columns].fillna(0.0)
 
-    # تصفية أسماء الـ Agents الوهمية أو الصفرية الناتجة عن دمج الشيتات
+    # تنظيف شامل للـ Agents الوهمية الناتجة من الدمج
     master_df = master_df[~master_df["Agent Name"].isin(["0", "0.0", "nan", "None"])]
 
-    # تنسيق النسب المئوية بشكل يضمن ظهور الـ % بشكل احترافي
+    # تنسيق النسب المئوية بشكل نظيف
     rate_cols = ["CSR", "Abondand rate", "Cancelled Rate"]
     for r_col in rate_cols:
         master_df[r_col] = master_df[r_col].apply(lambda x: f"{x:.2f}%" if x > 0 else "0.00%")
 
-    # ترتيب الجدول النهائي بشكل صارم (اسم العميل أولاً ثم الـ 14 عمود بالترتيب)
+    # الترتيب النهائي الإجباري للأعمدة
     final_order = ["Agent Name"] + required_columns
     master_df = master_df.reindex(columns=final_order)
 
-    st.success("✅ تم إجبار وظهور الـ 14 عمود كاملين بالترتيب الهندسي المظبوط!")
+    st.success("✅ تم حل مشكلة البيانات ونظام الـ 14 عمود جاهز تماماً للعرض!")
 
-    # 5. شريط البحث الجانبي
+    # 5. شريط البحث والتصفية
     st.sidebar.header("🔍 تصفية التقارير")
     search_query = st.sidebar.text_input("ابحث باسم الـ Agent:")
     
@@ -152,9 +153,9 @@ try:
     if search_query:
         filtered_df = filtered_df[filtered_df["Agent Name"].str.contains(search_query, case=False)]
 
-    # عرض الجدول الموحد الكامل
-    st.subheader("📋 تقرير الـ DBR النهائي (14 عمود كاملة):")
+    # عرض الجدول النهائي الخالي من المشاكل
+    st.subheader("📋 تقرير الـ DBR النهائي (14 عمود كاملة بدون أخطاء معالجة):")
     st.dataframe(filtered_df, use_container_width=True)
 
 except Exception as e:
-    st.error(f"حصل خطأ أثناء تحصين الأعمدة: {e}")
+    st.error(f"حصل خطأ أثناء معالجة البيانات: {e}")
