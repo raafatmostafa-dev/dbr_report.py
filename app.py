@@ -2,12 +2,12 @@ import streamlit as st
 import pandas as pd
 
 # 1. إعداد الصفحة في المتصفح
-st.set_page_config(page_title="DBR Sorted Dashboard", layout="wide")
-st.title("📊 لوحة التحكم الموحدة لتقارير الـ DBR (بالترتيب الدقيق)")
+st.set_page_config(page_title="DBR Strictly Sorted Dashboard", layout="wide")
+st.title("📊 لوحة التحكم الموحدة لتقارير الـ DBR (الترتيب الصارم)")
 
 RAW_SHEET_URL = "https://docs.google.com/spreadsheets/d/1TKQ55oQshnB6zHy6U7Dq3ZfHI3OknTjP1_J291Cmf_I/export?format=xlsx"
 
-st.info("🔄 جاري معالجة البيانات وترتيب الأعمدة بدقة... ثواني من فضلك.")
+st.info("🔄 جاري دمج البيانات وفرض الترتيب المطلوب بدقة... ثواني من فضلك.")
 
 try:
     # قراءة ملف الإكسيل بالكامل
@@ -53,7 +53,6 @@ try:
         if "Cancelled Rate" in df_src.columns:
             df_sub["Cancelled Rate"] = pd.to_numeric(df_src["Cancelled Rate"].astype(str).str.replace('%',''), errors='coerce') / 100
 
-        # تطبيق القواعد (الجمع للمكالمات والمتوسط للنسب)
         agg_rules = {}
         for col in df_sub.columns:
             if col != "Agent Name":
@@ -121,31 +120,33 @@ try:
             master_df[r_col] = master_df[r_col].apply(lambda x: f"{x*100:.2f}%" if x > 0 else "0.00%")
 
     # ----------------------------------------------------
-    # 5. الترتيب الإجباري والمثالي للأعمدة بناءً على طلبك بالظبط
+    # 5. فرض الترتيب المطلوب بالظبط وإجبار الجدول عليه
     # ----------------------------------------------------
     final_sorted_columns = [
         "Agent Name",
-        "Assigned Calls MVCC",
-        "Accepted Calls MVCC",
-        "CSR",
-        "Timed Out MVCC",
-        "Cancelled MVCC",
-        "Abandoned MVCC",
-        "Abondand rate",
-        "Cancelled Rate",
-        "Assigned Calls Voyce",
-        "Accepted Calls Voyce",
-        "Talk Time Voyce",
-        "Missing Calls Voyce",
-        "CSAT MVCC",
-        "CSAT Voyce"
+        "Assigned Calls MVCC",   # 1
+        "Accepted Calls MVCC",   # 2
+        "CSR",                   # 3
+        "Timed Out MVCC",        # 4
+        "Cancelled MVCC",        # 5
+        "Abandoned MVCC",        # 6
+        "Abondand rate",         # 7
+        "Cancelled Rate",        # 8
+        "Assigned Calls Voyce",  # 9
+        "Accepted Calls Voyce",  # 10
+        "Talk Time Voyce",       # 11
+        "Missing Calls Voyce",   # 12
+        "CSAT MVCC",             # 13
+        "CSAT Voyce"             # 14
     ]
     
-    # التأكد من عدم حدوث كراش لو عمود سقط من الشيت الأصلي
+    # فلترة الأعمدة المتواجدة فقط لضمان عدم حدوث خطأ كراش
     final_columns_present = [col for col in final_sorted_columns if col in master_df.columns]
-    master_df = master_df[final_columns_present]
+    
+    # هنا بنجبر الباندا يعيد ترتيب الجدول بالملي بناءً على القائمة المكتوبة فوق
+    master_df = master_df.reindex(columns=final_columns_present)
 
-    st.success("✅ تم الترتيب بالثانية وبدون أي لخبطة!")
+    st.success("✅ تم إعادة ترتيب الـ 14 عمود بالمسطرة تبعا لطلبك!")
 
     # 6. شريط البحث الجانبي
     st.sidebar.header("🔍 تصفية التقارير")
@@ -155,9 +156,9 @@ try:
     if search_query:
         filtered_df = filtered_df[filtered_df["Agent Name"].str.contains(search_query, case=False)]
 
-    # عرض الجدول النهائي المرتب
-    st.subheader("📋 الجدول النهائي المرتب (Per Agent):")
+    # عرض الجدول النهائي بعد إجبار الترتيب
+    st.subheader("📋 الجدول النهائي المترتب تنازلياً (Per Agent):")
     st.dataframe(filtered_df, use_container_width=True)
 
 except Exception as e:
-    st.error(f"حصلت مشكلة أثناء الترتيب: {e}")
+    st.error(f"حصلت مشكلة أثناء الترتيب الصارم: {e}")
