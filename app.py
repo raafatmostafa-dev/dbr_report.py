@@ -13,18 +13,15 @@ try:
     # قراءة ملف الإكسيل بالكامل
     excel_file = pd.ExcelFile(RAW_SHEET_URL, engine='openpyxl')
     
-    # قراءة وتنظيف أولي لجميع الشيتات لضمان عدم سقوط أي بيانات
     all_dfs = {}
     all_agents = set()
     
     for name in excel_file.sheet_names:
         df = excel_file.parse(name)
-        # تنظيف أسماء الأعمدة نفسها
         df.columns = df.columns.astype(str).str.strip()
         all_dfs[name] = df
         
         if "Agent Name" in df.columns:
-            # التحويل لنص أولاً لتجنب خطأ الـ .str accessor
             agents_clean = df["Agent Name"].dropna().astype(str).str.strip()
             agents_clean = [a for a in agents_clean.unique() if a and a.lower() not in ["nan", "null", "0", "0.0"]]
             all_agents.update(agents_clean)
@@ -33,20 +30,19 @@ try:
     master_df = pd.DataFrame(sorted(list(all_agents), key=str), columns=["Agent Name"])
 
     # ----------------------------------------------------
-    # 1. شيت [Calls MVCC] والـ Rates بتعتها
+    # 1. شيت [Calls MVCC] والـ Rates بتعتها (تعديل المسميات المطابقة للشيت الفعلي)
     # ----------------------------------------------------
     if "Calls MVCC" in all_dfs:
         df_src = all_dfs["Calls MVCC"].copy()
         df_src["Agent Name"] = df_src["Agent Name"].astype(str).str.strip()
         
-        # تجهيز الأعمدة الفردية وتأكيد تحويلها لأرقام
-        df_src["Assigned Calls MVCC"] = pd.to_numeric(df_src["Assigned Calls"], errors='coerce')
-        df_src["Accepted Calls MVCC"] = pd.to_numeric(df_src["Accepted Calls"], errors='coerce')
-        df_src["Timed Out MVCC"] = pd.to_numeric(df_src["Timed Out MVCC"], errors='coerce')
-        df_src["Cancelled MVCC"] = pd.to_numeric(df_src["Cancelled MVCC"], errors='coerce')
-        df_src["Abandoned MVCC"] = pd.to_numeric(df_src["Abandoned MVCC"], errors='coerce')
+        # مطابقة الأسماء الحرفية المكتوبة بالشيت الفعلي
+        df_src["Assigned Calls MVCC_calc"] = pd.to_numeric(df_src["Assigned Calls MVCC"], errors='coerce')
+        df_src["Accepted Calls MVCC_calc"] = pd.to_numeric(df_src["Accepted Calls MVCC"], errors='coerce')
+        df_src["Timed Out MVCC_calc"] = pd.to_numeric(df_src["Timed Out MVCC"], errors='coerce')
+        df_src["Cancelled MVCC_calc"] = pd.to_numeric(df_src["Cancelled MVCC"], errors='coerce')
+        df_src["Abandoned MVCC_calc"] = pd.to_numeric(df_src["Abandoned MVCC"], errors='coerce')
         
-        # التعامل مع النسب المئوية
         for r_col in ["CSR", "Abondand rate", "Cancelled Rate"]:
             if r_col in df_src.columns:
                 df_src[r_col] = df_src[r_col].astype(str).str.replace('%', '', regex=False)
@@ -55,17 +51,25 @@ try:
                     df_src[r_col] = df_src[r_col] * 100
 
         agg_rules = {
-            "Assigned Calls MVCC": "sum",
-            "Accepted Calls MVCC": "sum",
-            "Timed Out MVCC": "sum",
-            "Cancelled MVCC": "sum",
-            "Abandoned MVCC": "sum"
+            "Assigned Calls MVCC_calc": "sum",
+            "Accepted Calls MVCC_calc": "sum",
+            "Timed Out MVCC_calc": "sum",
+            "Cancelled MVCC_calc": "sum",
+            "Abandoned MVCC_calc": "sum"
         }
         if "CSR" in df_src.columns: agg_rules["CSR"] = "mean"
         if "Abondand rate" in df_src.columns: agg_rules["Abondand rate"] = "mean"
         if "Cancelled Rate" in df_src.columns: agg_rules["Cancelled Rate"] = "mean"
         
         df_g = df_src.groupby("Agent Name", as_index=False).agg(agg_rules)
+        # إعادة تسمية الأعمدة المحسوبة للاسم النهائي المطلوب للـ 14 عمود
+        df_g = df_g.rename(columns={
+            "Assigned Calls MVCC_calc": "Assigned Calls MVCC",
+            "Accepted Calls MVCC_calc": "Accepted Calls MVCC",
+            "Timed Out MVCC_calc": "Timed Out MVCC",
+            "Cancelled MVCC_calc": "Cancelled MVCC",
+            "Abandoned MVCC_calc": "Abandoned MVCC"
+        })
         master_df = pd.merge(master_df, df_g, on="Agent Name", how="left")
 
     # ----------------------------------------------------
@@ -75,7 +79,6 @@ try:
         df_src = all_dfs["Calls Voyce"].copy()
         df_src["Agent Name"] = df_src["Agent Name"].astype(str).str.strip()
         
-        # استخدام التسميات الصحيحة للأعمدة مع الـ Backslash
         df_src["Assigned Calls Voyce"] = pd.to_numeric(df_src["Assigned Calls \\"], errors='coerce')
         df_src["Accepted Calls Voyce"] = pd.to_numeric(df_src["Accepted Calls \\"], errors='coerce')
         df_src["Talk Time Voyce"] = pd.to_numeric(df_src["Talk Time Voyce"], errors='coerce')
@@ -104,7 +107,7 @@ try:
             master_df = pd.merge(master_df, df_g, on="Agent Name", how="left")
 
     # ----------------------------------------------------
-    # 4. بناء الـ 14 عمود بالترتيب الحرفي الصارم
+    # 4. بناء الـ 14 عمود النهائي بالترتيب الحرفي الصارم
     # ----------------------------------------------------
     required_columns = [
         "Assigned Calls MVCC",   # 1
@@ -123,27 +126,22 @@ try:
         "CSAT Voyce"             # 14
     ]
 
-    # إجبار خلق العمود لو كان مختفي أو فاضي لضمان الـ 14 عمود كاملين
     for col in required_columns:
         if col not in master_df.columns:
             master_df[col] = 0.0
 
-    # ملء الـ NaN بأصفار
     master_df[required_columns] = master_df[required_columns].fillna(0.0)
-
-    # تنظيف شامل للـ Agents الوهمية الناتجة من الدمج
     master_df = master_df[~master_df["Agent Name"].isin(["0", "0.0", "nan", "None"])]
 
-    # تنسيق النسب المئوية بشكل نظيف
+    # تنسيق النسب المئوية
     rate_cols = ["CSR", "Abondand rate", "Cancelled Rate"]
     for r_col in rate_cols:
         master_df[r_col] = master_df[r_col].apply(lambda x: f"{x:.2f}%" if x > 0 else "0.00%")
 
-    # الترتيب النهائي الإجباري للأعمدة
     final_order = ["Agent Name"] + required_columns
     master_df = master_df.reindex(columns=final_order)
 
-    st.success("✅ تم حل مشكلة البيانات ونظام الـ 14 عمود جاهز تماماً للعرض!")
+    st.success("✅ تم ربط أسماء الأعمدة بنجاح ومستعدين للعرض!")
 
     # 5. شريط البحث والتصفية
     st.sidebar.header("🔍 تصفية التقارير")
@@ -153,8 +151,8 @@ try:
     if search_query:
         filtered_df = filtered_df[filtered_df["Agent Name"].str.contains(search_query, case=False)]
 
-    # عرض الجدول النهائي الخالي من المشاكل
-    st.subheader("📋 تقرير الـ DBR النهائي (14 عمود كاملة بدون أخطاء معالجة):")
+    # عرض الجدول
+    st.subheader("📋 تقرير الـ DBR النهائي الـ 14 عمود:")
     st.dataframe(filtered_df, use_container_width=True)
 
 except Exception as e:
