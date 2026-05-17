@@ -23,48 +23,68 @@ try:
     all_agents = set()
     all_dfs = {}
     
-    # أولاً: لفة سريعة لتجميع كل الأسماء الفريدة من كل الشيتات
+    # أولاً: لفة على كل الشيتات وتجميع الأسماء وتحويلها لنصوص بنسبة 100% لمنع خطأ الترتيب
     for sheet_name in target_sheets:
         if sheet_name in excel_file.sheet_names:
             df = excel_file.parse(sheet_name)
             df.columns = df.columns.str.strip() # تنظيف أسماء الأعمدة
             all_dfs[sheet_name] = df
+            
             if "Agent Name" in df.columns:
-                agents_in_sheet = df["Agent Name"].dropna().str.strip().unique()
-                all_agents.update(agents_in_sheet)
+                # تحويل العمود بالكامل لنصوص، وحذف الخلايا الفاضية أو القيم الغريبة
+                agents_in_sheet = df["Agent Name"].dropna().astype(str).str.strip()
+                # فلترة للتأكد إن الخلية مش فاضية بعد التنظيف ومش كلمة نل
+                agents_in_sheet = agents_in_sheet[
+                    (agents_in_sheet != "") & 
+                    (agents_in_sheet.lower() != "nan") & 
+                    (agents_in_sheet.lower() != "null")
+                ]
+                all_agents.update(agents_in_sheet.unique())
     
-    # إنشاء الجدول الأساسي للأسماء (الموحد)
-    master_df = pd.DataFrame(sorted(list(all_agents)), columns=["Agent Name"])
+    # إنشاء الجدول الأساسي الموحد للأسماء وترتيبه بشكل آمن تماماً كـ نصوص
+    sorted_agents = sorted(list(all_agents), key=str)
+    master_df = pd.DataFrame(sorted_agents, columns=["Agent Name"])
     
     # ----------------------------------------------------
-    # خطوتنا الحالية: سحب الـ Avg Call Rating من شيت CSAT MVCC
+    # ثانياً: دمج الـ Avg Call Rating من شيت CSAT MVCC
     # ----------------------------------------------------
-    sheet_csat_mvcc = "CSAT MVCC"
-    if sheet_csat_mvcc in all_dfs:
-        df_csat = all_dfs[sheet_csat_mvcc]
-        
-        # التأكد إن الأعمدة المطلوبة موجودة في الشيت ده
-        if "Agent Name" in df_csat.columns and "Avg Call Rating" in df_csat.columns:
-            # هناخد بس عمود الاسم وعمود الـ Avg Call Rating ونضفهم
-            df_subset = df_csat[["Agent Name", "Avg Call Rating"]].copy()
+    if "CSAT MVCC" in all_dfs:
+        df_mvcc = all_dfs["CSAT MVCC"]
+        if "Agent Name" in df_mvcc.columns and "Avg Call Rating" in df_mvcc.columns:
+            df_subset = df_mvcc[["Agent Name", "Avg Call Rating"]].copy()
             df_subset["Agent Name"] = df_subset["Agent Name"].astype(str).str.strip()
             
-            # لو الـ Agent متكرر في الشيت، بنجيب متوسط تقييماته عشان ميتكررش في الجدول المدمج
-            df_subset_grouped = df_subset.groupby("Agent Name", as_index=False)["Avg Call Rating"].mean()
+            # حساب المتوسط لكل إيجنت
+            df_grouped = df_subset.groupby("Agent Name", as_index=False)["Avg Call Rating"].mean()
             
-            # دمج العمود جنب الأسماء (Left Join عشان نحافظ على كل الأسماء)
-            master_df = pd.merge(master_df, df_subset_grouped, on="Agent Name", how="left")
-            
-            # تغيير اسم العمود عشان نكون عارفين إنه جاي من شيت MVCC
+            # الدمج
+            master_df = pd.merge(master_df, df_grouped, on="Agent Name", how="left")
             master_df = master_df.rename(columns={"Avg Call Rating": "Avg Call Rating (MVCC)"})
-            
-            # استبدال الـ Nulls (الخلايا الفاضية) بـ 0 عشان التقرير يكون شكله نضيف
             master_df["Avg Call Rating (MVCC)"] = master_df["Avg Call Rating (MVCC)"].fillna(0)
 
-    st.success("✅ تم رص الأسماء وسحب الـ Avg Call Rating بنجاح!")
+    # ----------------------------------------------------
+    # ثالثاً: دمج الـ Avg Call Rating (أو الـ CSAT) من شيت CSAT Voyce
+    # ----------------------------------------------------
+    if "CSAT Voyce" in all_dfs:
+        df_voyce = all_dfs["CSAT Voyce"]
+        # ملحوظة: في شيت Voyce العمود مكتوب اسمه CSAT زي ما باين في صورتك، هنحسب متوسطه
+        if "Agent Name" in df_voyce.columns and "CSAT" in df_voyce.columns:
+            df_subset_v = df_voyce[["Agent Name", "CSAT"]].copy()
+            df_subset_v["Agent Name"] = df_subset_v["Agent Name"].astype(str).str.strip()
+            
+            # تحويل القيم لأرقام عشان لو فيها نصوص متعملش مشكلة
+            df_subset_v["CSAT"] = pd.to_numeric(df_subset_v["CSAT"], errors='coerce')
+            df_grouped_v = df_subset_v.groupby("Agent Name", as_index=False)["CSAT"].mean()
+            
+            # الدمج
+            master_df = pd.merge(master_df, df_grouped_v, on="Agent Name", how="left")
+            master_df = master_df.rename(columns={"CSAT": "Avg Call Rating (Voyce)"})
+            master_df["Avg Call Rating (Voyce)"] = master_df["Avg Call Rating (Voyce)"].fillna(0)
+
+    st.success("✅ تم معالجة وتوحيد الأسماء وسحب التقييمات بنجاح!")
     
-    # 2. عرض الجدول بعد الخطوة الأولى
-    st.subheader("📋 جدول البيانات الحالي:")
+    # 2. عرض الجدول النهائي النظيف
+    st.subheader("📋 تقرير الأداء المدمج الحالي (Per Agent):")
     st.dataframe(master_df, use_container_width=True)
 
 except Exception as e:
